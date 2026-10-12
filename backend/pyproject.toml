@@ -1,0 +1,9 @@
+[project]
+name = "wayfinder-backend"
+version = "0.1.0"
+description = "Multi-agent travel-planning assistant (LangGraph + FastAPI)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
