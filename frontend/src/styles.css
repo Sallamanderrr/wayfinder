@@ -1,0 +1,664 @@
+/* Wayfinder. Design tokens: transit-map colours (one line per agent) on cool map paper,
+   set in Overpass, a typeface derived from highway signage. */
+
+:root {
+  --bg: #eef2f5;
+  --surface: #ffffff;
+  --ink: #172433;
+  --muted: #586776;
+  --rule: #d3dbe3;
+  --sign: #1d3e64;
+  --on-sign: #ffffff;
+  --danger: #b42318;
+
+  --supervisor: #4a5563;
+  --researcher: #1e66b0;
+  --planner: #2a8a4a;
+  --verifier: #c7711a;
+
+  --font: 'Overpass Variable', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Overpass Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10161d;
+    --surface: #17202a;
+    --ink: #e4eaf0;
+    --muted: #97a5b3;
+    --rule: #2a3643;
+    --sign: #24496f;
+    --on-sign: #f2f6fa;
+    --danger: #f2877b;
+
+    --supervisor: #8c97a4;
+    --researcher: #5b9be0;
+    --planner: #4db36e;
+    --verifier: #e39a4a;
+
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 1rem;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--researcher);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Layout -------------------------------------------------------------------------- */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100dvh;
+}
+
+.column {
+  width: 100%;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 28px;
+  height: 28px;
+}
+
+.brand-mark path {
+  fill: none;
+  stroke: var(--researcher);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.brand-mark circle {
+  fill: var(--surface);
+  stroke-width: 3;
+}
+
+.brand-mark circle:first-of-type {
+  stroke: var(--planner);
+}
+
+.brand-mark circle:last-of-type {
+  stroke: var(--verifier);
+}
+
+.brand-name {
+  font-size: 1.25rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.ghost {
+  border: 1px solid var(--rule);
+  background: transparent;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.ghost:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.ghost:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.conversation {
+  overflow-y: auto;
+  padding: 28px 0 40px;
+}
+
+/* ---- Empty state --------------------------------------------------------------------- */
+
+.empty {
+  padding-top: 4vh;
+}
+
+.empty-title {
+  margin: 0;
+  font-size: clamp(2.75rem, 9vw, 4.75rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.015em;
+}
+
+.empty-lede {
+  max-width: 34rem;
+  margin: 16px 0 36px;
+  font-size: 1.125rem;
+  color: var(--muted);
+}
+
+.examples {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  gap: 28px 24px;
+}
+
+.example-group h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.example-description {
+  margin: 4px 0 12px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.example {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.example:hover {
+  border-color: var(--ink);
+}
+
+/* ---- Messages ------------------------------------------------------------------------ */
+
+.user-message {
+  width: fit-content;
+  max-width: 85%;
+  margin: 0 0 20px auto;
+  padding: 10px 14px;
+  border-radius: 12px 12px 4px 12px;
+  background: var(--sign);
+  color: var(--on-sign);
+  white-space: pre-wrap;
+}
+
+.assistant-message {
+  margin-bottom: 36px;
+}
+
+.error {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+}
+
+/* ---- Agent route (the trace) --------------------------------------------------------- */
+
+.trace {
+  margin-bottom: 14px;
+}
+
+.trace-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: 0.875rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.trace-toggle-text {
+  flex: 1;
+}
+
+.trace-toggle-hint {
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mini-route {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.mini-route::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  height: 2px;
+  background: var(--rule);
+}
+
+.mini-dot {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2.5px solid var(--line-colour, var(--supervisor));
+  background: var(--surface);
+}
+
+.mini-dot--researcher {
+  --line-colour: var(--researcher);
+}
+
+.mini-dot--planner {
+  --line-colour: var(--planner);
+}
+
+.mini-dot--verifier {
+  --line-colour: var(--verifier);
+}
+
+.route {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 0.9375rem;
+}
+
+/* Each station: a ringed dot on a thick line in the agent's colour. */
+.station {
+  --line-colour: var(--supervisor);
+  position: relative;
+  padding: 0 0 16px 30px;
+}
+
+.station::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 12px;
+  bottom: -4px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--line-colour);
+}
+
+.station:last-child::before {
+  display: none;
+}
+
+.station::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 3.5px solid var(--line-colour);
+  background: var(--surface);
+}
+
+.station--researcher {
+  --line-colour: var(--researcher);
+}
+
+.station--planner {
+  --line-colour: var(--planner);
+}
+
+.station--verifier {
+  --line-colour: var(--verifier);
+}
+
+.station--terminus::after {
+  background: var(--line-colour);
+}
+
+.station--pending {
+  color: var(--muted);
+}
+
+.station--pending::after {
+  border-style: dotted;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    transform: scale(0.75);
+    opacity: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .station--pending::after {
+    animation: none;
+  }
+}
+
+.station-head {
+  margin: 0;
+  color: var(--muted);
+}
+
+.station-name {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.stops {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+/* Tool calls are smaller stops on the same line. */
+.stop {
+  position: relative;
+  padding: 2px 0 4px;
+}
+
+.stop::before {
+  content: '';
+  position: absolute;
+  left: -25px; /* centred on the station line: 9px from the station edge, minus 30px padding */
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--line-colour);
+}
+
+.stop--running::before {
+  background: var(--line-colour);
+}
+
+.call {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.stop-status {
+  margin-left: 8px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.detail {
+  margin-top: 4px;
+}
+
+.detail summary {
+  width: fit-content;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.detail summary:hover {
+  color: var(--ink);
+}
+
+.detail-body {
+  margin: 6px 0 4px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--rule);
+  background: var(--surface);
+  border-radius: 0 6px 6px 0;
+  font-size: 0.875rem;
+}
+
+.result {
+  max-height: 16rem;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.verdict {
+  margin-top: 6px;
+}
+
+.verdict p {
+  margin: 0;
+}
+
+.verdict ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.verdict--approved strong {
+  color: var(--planner);
+}
+
+.verdict--changes strong {
+  color: var(--danger);
+}
+
+/* ---- Answer text --------------------------------------------------------------------- */
+
+.prose {
+  overflow-wrap: break-word;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+.prose p,
+.prose ul,
+.prose ol {
+  margin: 0 0 0.8em;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.3em;
+}
+
+.prose li + li {
+  margin-top: 0.2em;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  margin: 1.3em 0 0.4em;
+  line-height: 1.25;
+}
+
+.prose h1 {
+  font-size: 1.375rem;
+}
+
+.prose h2 {
+  font-size: 1.1875rem;
+}
+
+.prose h3,
+.prose h4 {
+  font-size: 1.0625rem;
+}
+
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.875em;
+}
+
+.prose blockquote {
+  margin: 1em 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--verifier);
+  color: var(--muted);
+}
+
+.prose blockquote p,
+.prose blockquote ul {
+  margin-bottom: 0.3em;
+}
+
+.prose a {
+  color: var(--researcher);
+}
+
+.table-scroll {
+  margin: 0 0 1em;
+  overflow-x: auto;
+}
+
+.prose table {
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.prose th,
+.prose td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  font-weight: 700;
+  border-bottom-width: 2px;
+}
+
+/* Keep amounts like "14.00 EUR" on one line; the wrapper scrolls if the table is too wide. */
+.prose td:not(:first-child),
+.prose th:not(:first-child) {
+  white-space: nowrap;
+}
+
+/* ---- Composer ------------------------------------------------------------------------ */
+
+.composer-bar {
+  padding: 12px 0 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.composer textarea {
+  flex: 1;
+  min-height: 3rem;
+  max-height: 10rem;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  line-height: 1.45;
+  resize: none;
+  field-sizing: content;
+}
+
+.composer textarea:focus-visible {
+  outline-offset: 0;
+}
+
+.composer button {
+  padding: 11px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--sign);
+  color: var(--on-sign);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.composer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 560px) {
+  .topbar {
+    padding: 10px 16px;
+  }
+
+  .conversation {
+    padding-top: 20px;
+  }
+
+  .user-message {
+    max-width: 92%;
+  }
+}
