@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Secrets
+.env
+
+# Node (frontend/.gitignore covers the rest)
+node_modules/
+dist/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
