@@ -143,6 +143,26 @@ def test_unresolved_review_is_disclosed_in_the_answer(research_tools, planning_t
     assert "Heads-up from the verifier" in final and "the rate is invented" in final
 
 
+def test_code_check_overrides_an_approval_when_figures_are_made_up(research_tools, planning_tools):
+    _, graph = make_graph(
+        {
+            "supervisor": [route("planner", "Budget 2 x 8 EUR in SEK."), route("verifier", "Check."), route("finish")],
+            "planner": [
+                call_tool("convert_currency", "c1", amount=1, from_currency="EUR", to_currency="SEK"),
+                AIMessage(content="Two tickets: 179.20 SEK."),  # 16 x 11.1948 = 179.12, computed by hand
+            ],
+            "verifier": [structured("Review", issues=[], approved=True, summary="Looks right.")],
+        },
+        research_tools,
+        planning_tools,
+    )
+    events = run_turn(graph, "t6", "Two 8 EUR tickets in SEK?")
+    review = next(e for e in events if e["type"] == "review")
+    assert review["approved"] is False
+    assert "179.20" in review["issues"][0]
+    assert "Heads-up from the verifier" in events[-1]["content"]
+
+
 def test_turn_is_cut_off_at_the_agent_run_limit(research_tools, planning_tools):
     _, graph = make_graph(
         {

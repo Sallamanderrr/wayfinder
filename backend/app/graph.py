@@ -35,6 +35,7 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 from . import prompts
+from .checks import unsupported_amounts
 
 WORKERS = ("researcher", "planner")
 FALLBACK_ANSWER = (
@@ -262,6 +263,7 @@ def _verifier_node(llm: BaseChatModel, today: Callable[[], date]):
     def verifier(state: TravelState) -> dict[str, Any]:
         context = _verifier_context(state, today())
         review = reviewer.invoke([SystemMessage(content=prompts.VERIFIER), HumanMessage(content=context)])
+        review = check_figures(review, state)
         get_stream_writer()(
             {"type": "review", "approved": review.approved, "issues": review.issues, "summary": review.summary}
         )
@@ -276,6 +278,26 @@ def _verifier_node(llm: BaseChatModel, today: Callable[[], date]):
         return {"work_log": [*state["work_log"], item]}
 
     return verifier
+
+
+def check_figures(review: Review, state: TravelState) -> Review:
+    """Fail the review if the draft contains amounts that no tool produced.
+
+    Deterministic backup for the LLM verifier, which can't reliably check arithmetic.
+    Earlier messages count as sources too, so a follow-up can reuse checked figures.
+    """
+    work_log = state["work_log"]
+    sources = [call["result"] for item in work_log for call in item["tool_calls"]]
+    sources += [message.text for message in state["messages"]]
+    missing = unsupported_amounts(latest_draft(work_log)[1], sources)
+    if not missing:
+        return review
+    issue = (
+        f"These amounts don't match any tool result: {', '.join(missing)}. "
+        "Compute them with budget_breakdown (or the calculator) and copy the results exactly."
+    )
+    summary = review.summary if not review.approved else "Some amounts weren't computed by a tool."
+    return review.model_copy(update={"approved": False, "issues": [*review.issues, issue], "summary": summary})
 
 
 def _finalize_node(state: TravelState) -> dict[str, Any]:

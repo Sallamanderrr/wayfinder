@@ -2,7 +2,7 @@
 
 Each agent gets only the tools that match its role:
 - researcher: search_travel_guides (RAG), find_attractions (structured data), get_weather_forecast (API)
-- planner:    calculator, convert_currency (API)
+- planner:    budget_breakdown (computation + API), calculator, convert_currency (API)
 
 Tools always return text. Expected failures (bad dates, unknown city, API down) are
 returned as "Error: ..." strings so the agent can recover or explain; `_never_raises`
@@ -17,14 +17,23 @@ from collections.abc import Callable
 from datetime import date
 
 from langchain_core.tools import BaseTool, tool
+from pydantic import BaseModel, Field
 
 from .rag import KnowledgeBase
 from .services.attractions import AttractionsDB
+from .services.budget import BudgetLine, budget_table
 from .services.calculator import CalculatorError, evaluate, format_number
 from .services.currency import CurrencyError, CurrencyService
 from .services.weather import WeatherError, WeatherService
 
 logger = logging.getLogger(__name__)
+
+
+class BudgetItem(BaseModel):
+    """One paid item in a trip budget."""
+
+    name: str = Field(description="What the cost is for, e.g. 'Jerónimos Monastery'.")
+    price_per_person: float = Field(description="Price for one person, in the prices' currency.")
 
 
 def _never_raises(func: Callable[..., str]) -> Callable[..., str]:
@@ -134,6 +143,50 @@ def build_research_tools(
 def build_planning_tools(currency: CurrencyService) -> list[BaseTool]:
     @tool(parse_docstring=True)
     @_never_raises
+    def budget_breakdown(
+        items: list[BudgetItem],
+        travellers: int,
+        currency_code: str,
+        budget: float | None = None,
+        budget_currency: str | None = None,
+    ) -> str:
+        """Compute a trip budget as a ready-made table. Use it for every budget.
+
+        Multiplies each per-person price by the number of travellers, converts to the
+        budget's currency at today's rate, totals everything and checks the budget, all
+        with exact decimal arithmetic. Copy the table into your answer unchanged.
+
+        Args:
+            items: The paid items, each with a name and a price per person.
+            travellers: Number of travellers.
+            currency_code: ISO code of the prices, e.g. "EUR".
+            budget: Optional budget amount, in budget_currency.
+            budget_currency: Optional ISO code of the budget, e.g. "SEK". Defaults to currency_code.
+        """
+        lines = [
+            BudgetLine(name=item.name, price_per_person=item.price_per_person)
+            if isinstance(item, BudgetItem)
+            else BudgetLine(name=item["name"], price_per_person=item["price_per_person"])
+            for item in items
+        ]
+        target = (budget_currency or currency_code).strip().upper()
+        source = currency_code.strip().upper()
+        try:
+            rate = currency.rate(source, target)
+            return budget_table(
+                lines,
+                travellers,
+                source,
+                target_currency=target,
+                rate=rate.rate,
+                rate_date=rate.as_of,
+                budget=budget,
+            )
+        except (CurrencyError, ValueError) as exc:
+            return f"Error: {exc}"
+
+    @tool(parse_docstring=True)
+    @_never_raises
     def calculator(expression: str) -> str:
         """Evaluate an arithmetic expression exactly. Use it for every total, split and budget check.
 
@@ -163,4 +216,4 @@ def build_planning_tools(currency: CurrencyService) -> list[BaseTool]:
         except CurrencyError as exc:
             return f"Error: {exc}"
 
-    return [calculator, convert_currency]
+    return [budget_breakdown, calculator, convert_currency]

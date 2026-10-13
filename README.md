@@ -1,6 +1,6 @@
 # Wayfinder: a multi-agent travel planner
 
-Wayfinder plans city breaks in Lisbon, Barcelona, Rome, Paris and Stockholm. A **supervisor** agent decides, step by step, which specialist works on a question next: a **researcher** that gathers facts (RAG over travel guides, an attractions database, a live weather API), a **planner** that builds itineraries and budgets (calculator, live exchange rates), and a **verifier** that checks the draft against the user's constraints and the raw tool results. The React chat UI shows the route the agents take while they work.
+Wayfinder plans city breaks in Lisbon, Barcelona, Rome, Paris and Stockholm. A **supervisor** agent decides, step by step, which specialist works on a question next: a **researcher** that gathers facts (RAG over travel guides, an attractions database, a live weather API), a **planner** that builds itineraries and budgets (a budget calculator, live exchange rates), and a **verifier** that checks the draft against the user's constraints and the raw tool results, backed by a code-level check that every amount came from a tool. The React chat UI shows the route the agents take while they work.
 
 **Stack:** LangGraph + LangChain 1.x, OpenAI (`gpt-4.1-mini`, `text-embedding-3-small`), FastAPI with Server-Sent Events, React 19 + TypeScript + Vite, Open-Meteo and Frankfurter (free public APIs, no keys).
 
@@ -45,7 +45,7 @@ The first five are also clickable in the UI's start screen.
 | Which neighbourhood in Stockholm suits a first visit? | RAG | Researcher → `search_travel_guides` |
 | What's the weather in Barcelona over the next three days? | Public API tool | Researcher → `get_weather_forecast` |
 | Which museums in Paris are open on Mondays, and what do they cost in SEK? | Structured data, then a second agent and tool | Researcher → `find_attractions` → Planner → `convert_currency` |
-| Plan two days in Lisbon this weekend for two people. Our budget for sights is 1,500 SEK, and we prefer indoor sights if it rains. | Full multi-agent collaboration with review | Researcher (forecast, attractions, guides) → Planner (exchange rate, calculator) → Verifier, back to the Planner if the Verifier finds issues |
+| Plan two days in Lisbon this weekend for two people. Our budget for sights is 1,500 SEK, and we prefer indoor sights if it rains. | Full multi-agent collaboration with review | Researcher (forecast, attractions, guides) → Planner (`budget_breakdown`) → Verifier, back to the Planner if the Verifier finds issues |
 | *(follow-up)* Make it three days and add a day trip to Sintra. | Conversation memory | Uses the previous turn's plan |
 | How much is 2,500 SEK in euros? | Routing straight to the right agent | Planner → `convert_currency` |
 | What's the weather usually like in Rome around Christmas? | Choosing RAG over the API | Researcher → guides' climate notes (the forecast only reaches 16 days ahead) |
@@ -69,7 +69,7 @@ flowchart LR
     R --- KB[("Travel guides<br/>(RAG)")]
     R --- DB[("attractions.csv")]
     R --- WX(["Open-Meteo"])
-    P --- CALC(["Calculator"])
+    P --- CALC(["Budget calculator<br/>and calculator"])
     P --- FX(["Frankfurter"])
 ```
 
@@ -86,9 +86,10 @@ One user message runs like this:
 |---|---|
 | `backend/app/graph.py` | Graph state, supervisor, agent and verifier nodes, guardrails, context building |
 | `backend/app/prompts.py` | The four role prompts |
-| `backend/app/tools.py` | The five tools, grouped by the agent that uses them |
+| `backend/app/tools.py` | The six tools, grouped by the agent that uses them |
+| `backend/app/checks.py` | Code-level check that every amount in a draft came from a tool |
 | `backend/app/rag.py` | Chunking, embedding and vector search over the guides |
-| `backend/app/services/` | Plain-Python services (weather, currency, attractions, calculator) with no LLM code |
+| `backend/app/services/` | Plain-Python services (weather, currency, attractions, budget, calculator) with no LLM code |
 | `backend/app/assistant.py` | Composition root: builds the model, knowledge base, tools and graph |
 | `backend/app/main.py` | FastAPI app: streaming chat endpoint, conversation history, health check |
 | `backend/data/` | Knowledge base (six Markdown guides) and `attractions.csv` |
@@ -101,8 +102,8 @@ One user message runs like this:
 |---|---|---|---|
 | Supervisor | Chooses who acts next and writes their task; decides whether a draft needs review and when to stop; answers greetings and asks clarifying questions itself | LLM call with structured output (`SupervisorDecision`) | None |
 | Researcher | Finds facts and cites where each came from | Tool-calling (ReAct) agent from LangChain's `create_agent` | `search_travel_guides`, `find_attractions`, `get_weather_forecast` |
-| Planner | Turns research into itineraries and budgets, and does conversions | Tool-calling (ReAct) agent | `calculator`, `convert_currency` |
-| Verifier | Checks the latest draft against the user's constraints, the raw tool results and the arithmetic; approves it or lists fixable issues | LLM call with structured output (`Review`) | None (it reads the evidence) |
+| Planner | Turns research into itineraries and budgets, and does conversions | Tool-calling (ReAct) agent | `budget_breakdown`, `calculator`, `convert_currency` |
+| Verifier | Checks the latest draft against the user's constraints and the raw tool results; approves it or lists fixable issues. Code then checks every amount in the draft against the tool results | LLM call with structured output (`Review`) plus a deterministic check | None (it reads the evidence) |
 
 Each agent only gets the tools its role needs: the planner can't look facts up, so it can only plan from evidence the researcher gathered. The verifier is given the raw tool outputs rather than the agents' summaries of them, so a price that changed between research and plan is something it can catch.
 
@@ -114,7 +115,8 @@ Each agent only gets the tools its role needs: the planner can't look facts up, 
 | `find_attractions` | Structured data query | `attractions.csv` (51 attractions): filter by city, category, indoor/outdoor, maximum price, and whether it's open on a given weekday or date |
 | `get_weather_forecast` | Public API | Open-Meteo geocoding and daily forecast, for today and the next 15 days |
 | `convert_currency` | Public API | Frankfurter daily reference rates, cached for an hour |
-| `calculator` | Computation | Arithmetic parsed with Python's `ast` module, never `eval` |
+| `budget_breakdown` | Computation (+ API) | Per-person prices × travellers, conversion, totals and budget check, in exact decimal arithmetic; returns a finished table |
+| `calculator` | Computation | Any other arithmetic, parsed with Python's `ast` module, never `eval` |
 
 **RAG pipeline.** Each guide is split into one chunk per `##` section ("Getting around", "Typical costs"…), because each section answers one kind of question. Every chunk starts with `City — Section` so its embedding carries that context, and it keeps `source`, `section` and `city` as metadata. At startup the chunks are embedded with `text-embedding-3-small` in one batched call and held in LangChain's in-memory vector store. Search returns the top 4 chunks by cosine similarity, optionally filtered by city, so a question about Rome's airport can't return Lisbon's. Each result carries its source, which the agents cite as `(source: rome.md › Getting around)`.
 
@@ -135,7 +137,7 @@ Each agent only gets the tools its role needs: the planner can't look facts up, 
 ## Design decisions and trade-offs
 
 - **A supervisor instead of a fixed pipeline.** Each hop costs an extra LLM call, so a full plan with review takes about 10 to 15 calls. In return, simple questions take a one-agent path and only plans that the user will rely on get reviewed.
-- **Arithmetic goes to a calculator.** LLMs are unreliable at sums, so the planner's prompt requires the tool for every total, and the verifier checks totals against the calculator results.
+- **Guarantees in code, not prompts.** In live runs the planner converted only the total and wrote the line items by hand, a few cents off and adjusted to add up, and the LLM verifier approved it. Telling the planner to use the calculator didn't fix it reliably. So budgets now come from `budget_breakdown`, which does all the maths in code, and the verifier step runs a deterministic check that every amount in the draft (any number with two decimals) matches a tool result. The LLM verifier focuses on what it's good at: constraints, completeness and grounding.
 - **Small typed tools instead of generated queries.** The model fills in filter arguments; code does the filtering. That's predictable and safe, and tool errors stay readable.
 - **In-memory stores.** 46 chunks and a demo don't justify a vector database or a SQL checkpointer. Both are one-line swaps (for example Chroma or pgvector, and `SqliteSaver` or `PostgresSaver`).
 - **Testing orchestration without a model.** A scripted fake LLM drives the real graph, tools and API, so routing, the review loop, limits and memory are tested deterministically, offline, in under a second.
@@ -143,7 +145,7 @@ Each agent only gets the tools its role needs: the planner can't look facts up, 
 ## What I would improve with more time
 
 - **Evaluation.** A set of questions with expected routes, tool calls and answer checks (exact checks plus an LLM judge), run in CI to compare prompts and models.
-- **Deterministic checks.** Have the planner return its budget as structured data so code can recheck totals and constraints, leaving the verifier to judge quality.
+- **More deterministic checks.** Extend the code-level checks beyond amounts: closing days against the attractions data, dates against the forecast, and the travellers count against the request.
 - **Better retrieval.** Hybrid search (BM25 plus embeddings), re-ranking, a relevance threshold to drop weak matches, and more sources.
 - **Parallel research.** Fan out independent lookups (weather, attractions, guides) with LangGraph's `Send` API to cut latency.
 - **Answer streaming.** Stream the final answer token by token. Today it arrives in one piece because only reviewed drafts are shown.
