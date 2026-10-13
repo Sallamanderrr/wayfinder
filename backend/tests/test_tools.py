@@ -135,7 +135,7 @@ def test_currency_conversion_uses_live_rate_and_caches_it(currency, http_client)
     currency.convert(100, "EUR", "SEK")
     assert first.converted == pytest.approx(2798.70)
     assert calls == ["/v2/rate/eur/sek"]  # second conversion served from cache
-    assert "250.00 EUR = 2,798.70 SEK (rate 11.1948" in first.describe()
+    assert "250.00 EUR = 2,798.70 SEK (rate 1 EUR = 11.1948 SEK" in first.describe()
 
 
 def test_unexpected_tool_failures_are_reported_to_the_agent(knowledge_base, attractions):

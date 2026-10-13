@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.checks import unsupported_amounts
+from app.checks import money_amounts, unsupported_amounts, unsupported_budget_inputs
 from app.services.budget import BudgetLine, budget_table
 
 LISBON = [
@@ -72,5 +72,37 @@ def test_flags_amounts_no_tool_produced():
     assert unsupported_amounts(draft, sources) == ["179.20"]
 
 
-def test_ignores_numbers_that_are_not_two_decimal_amounts():
-    assert unsupported_amounts("Opens 9:00, 18 EUR, 1.5 h, rate 11.2006, 85% rain", []) == []
+def test_money_amounts_are_two_decimal_numbers_or_numbers_next_to_a_currency():
+    text = "€8 each, 16 EUR for two, SEK 330, 1,500 SEK, 69.44, meals €15–20, 2 people, 1.5 h, 85%, on 2026-10-17"
+    assert money_amounts(text) == ["8", "16", "330", "1,500", "69.44", "15"]
+
+
+def test_accepts_a_correct_answer_from_a_live_run():
+    # The Paris museums answer, checked against the conversion results it was built from.
+    draft = "Musée de l'Orangerie: 140.01 SEK (12.5 EUR)\nLouvre Museum: 246.41 SEK (22 EUR)\nThe exchange rate used is 1 EUR = 11.2006 SEK."
+    sources = [
+        "12.50 EUR = 140.01 SEK (rate 1 EUR = 11.2006 SEK, reference rate of 2026-10-13)",
+        "22.00 EUR = 246.41 SEK (rate 1 EUR = 11.2006 SEK, reference rate of 2026-10-13)",
+    ]
+    assert unsupported_amounts(draft, sources) == []
+
+
+def test_flags_hand_computed_whole_amounts():
+    # From a live run: the budget was converted by hand and the remainder made up.
+    draft = "a budget of 1,500 SEK (~136 EUR) ... Within budget: 63.80 EUR left of 136.00 EUR (approx. 703 SEK left)"
+    sources = ["Plan two days in Lisbon ... Our budget for sights is 1,500 SEK", "Within budget: 63.80 EUR left of 136.00 EUR."]
+    assert unsupported_amounts(draft, sources) == ["703"]  # 136 slips through: the tool echoed it ...
+
+
+def test_flags_budget_inputs_that_the_user_never_gave():
+    # ... which is why the tool's inputs are checked too.
+    args = {
+        "items": [{"name": "Tile Museum", "price_per_person": 8}, {"name": "Tram 28", "price_per_person": 3.1}],
+        "travellers": 2,
+        "currency_code": "EUR",
+        "budget": 136,
+        "budget_currency": "EUR",
+    }
+    sources = ["Our budget for sights is 1,500 SEK", "National Tile Museum | 8 EUR per adult", "Tram 28 | 3.1 EUR per adult"]
+    assert unsupported_budget_inputs(args, sources) == ["budget 136"]
+    assert unsupported_budget_inputs({**args, "budget": 1500, "budget_currency": "SEK"}, sources) == []

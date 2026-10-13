@@ -59,7 +59,7 @@ def test_plan_goes_through_research_planning_review_and_revision(research_tools,
                 call_tool("calculator", "k1", expression="2 * (8 + 14)"),
                 AIMessage(content="Draft v1: Tile Museum + Gulbenkian, total 44 EUR."),
                 call_tool("calculator", "k2", expression="2 * (8 + 14) + 2 * 3.10"),
-                AIMessage(content="Draft v2: Tile Museum, Gulbenkian and Tram 28, total 50.20 EUR (~562 SEK)."),
+                AIMessage(content="Draft v2: Tile Museum, Gulbenkian and Tram 28, total 50.20 EUR."),
             ],
             "verifier": [
                 structured("Review", issues=["The total leaves out the tram fares."], approved=False, summary="Total is incomplete."),
@@ -83,7 +83,7 @@ def test_plan_goes_through_research_planning_review_and_revision(research_tools,
 
     reviews = [e["approved"] for e in events if e["type"] == "review"]
     assert reviews == [False, True]
-    assert events[-1] == {"type": "final", "content": "Draft v2: Tile Museum, Gulbenkian and Tram 28, total 50.20 EUR (~562 SEK)."}
+    assert events[-1] == {"type": "final", "content": "Draft v2: Tile Museum, Gulbenkian and Tram 28, total 50.20 EUR."}
 
     # The revising planner saw the verifier's issue; the verifier saw raw tool evidence.
     planner_prompts = [msgs[-1].text for role, msgs in llm.calls if role == "planner" and isinstance(msgs[-1], HumanMessage)]
@@ -161,6 +161,45 @@ def test_code_check_overrides_an_approval_when_figures_are_made_up(research_tool
     assert review["approved"] is False
     assert "179.20" in review["issues"][0]
     assert "Heads-up from the verifier" in events[-1]["content"]
+
+
+def test_hand_converted_budget_is_rejected_and_fixed(research_tools, planning_tools):
+    # Replays a live run: the planner converted 1,500 SEK to "136 EUR" by hand and passed
+    # that to budget_breakdown. The code check rejects it; the revision passes.
+    items = [{"name": "National Tile Museum", "price_per_person": 8}]
+    _, graph = make_graph(
+        {
+            "supervisor": [
+                route("researcher", "Lisbon indoor sights."),
+                route("planner", "Plan within 1,500 SEK."),
+                route("verifier", "Check."),
+                route("planner", "Fix the budget inputs."),
+                route("verifier", "Re-check."),
+                route("finish"),
+            ],
+            "researcher": [
+                call_tool("find_attractions", "a1", city="Lisbon", indoor=True, max_price=10),
+                AIMessage(content="National Tile Museum, 8 EUR (attractions database)."),
+            ],
+            "planner": [
+                call_tool("budget_breakdown", "b1", items=items, travellers=2, currency_code="EUR", budget=136, budget_currency="EUR"),
+                AIMessage(content="Tile Museum: 16.00 EUR. Within budget: 120.00 EUR left of 136.00 EUR."),
+                call_tool("budget_breakdown", "b2", items=items, travellers=2, currency_code="EUR", budget=1500, budget_currency="SEK"),
+                AIMessage(content="Tile Museum: 179.12 SEK for two. Within budget: 1,320.88 SEK left of 1,500.00 SEK."),
+            ],
+            "verifier": [
+                structured("Review", issues=[], approved=True, summary="Looks right."),
+                structured("Review", issues=[], approved=True, summary="Looks right."),
+            ],
+        },
+        research_tools,
+        planning_tools,
+    )
+    events = run_turn(graph, "t7", "Plan a Lisbon day for 2. Our budget for sights is 1,500 SEK.")
+    first, second = [e for e in events if e["type"] == "review"]
+    assert first["approved"] is False and "budget 136" in first["issues"][0]
+    assert second["approved"] is True
+    assert "1,320.88 SEK left" in events[-1]["content"]  # 1,500 - 16 x 11.1948 = 1,320.88
 
 
 def test_turn_is_cut_off_at_the_agent_run_limit(research_tools, planning_tools):

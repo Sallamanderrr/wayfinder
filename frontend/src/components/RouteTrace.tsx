@@ -134,6 +134,6 @@ function pendingLabel(trace: Trace): string {
 function formatArgs(args: Record<string, unknown>): string {
   return Object.entries(args)
     .filter(([, value]) => value !== null && value !== undefined)
-    .map(([key, value]) => `${key}: ${typeof value === 'string' ? `"${value}"` : String(value)}`)
+    .map(([key, value]) => `${key}: ${typeof value === 'object' || typeof value === 'string' ? JSON.stringify(value) : String(value)}`)
     .join(', ')
 }

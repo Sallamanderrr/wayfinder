@@ -35,7 +35,7 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 from . import prompts
-from .checks import unsupported_amounts
+from .checks import unsupported_amounts, unsupported_budget_inputs
 
 WORKERS = ("researcher", "planner")
 FALLBACK_ANSWER = (
@@ -281,23 +281,44 @@ def _verifier_node(llm: BaseChatModel, today: Callable[[], date]):
 
 
 def check_figures(review: Review, state: TravelState) -> Review:
-    """Fail the review if the draft contains amounts that no tool produced.
+    """Fail the review if the draft's money figures weren't produced by tools.
 
-    Deterministic backup for the LLM verifier, which can't reliably check arithmetic.
-    Earlier messages count as sources too, so a follow-up can reuse checked figures.
+    Deterministic backup for the LLM verifier, which can't reliably check arithmetic:
+    1. The budget and prices given to budget_breakdown must come from the user's messages
+       or the research results (otherwise a hand-converted budget would look backed up).
+    2. Every money amount in the draft must match a tool result or an earlier message, so a
+       follow-up can reuse figures that were already checked.
     """
     work_log = state["work_log"]
-    sources = [call["result"] for item in work_log for call in item["tool_calls"]]
-    sources += [message.text for message in state["messages"]]
-    missing = unsupported_amounts(latest_draft(work_log)[1], sources)
-    if not missing:
+    draft_index, draft = latest_draft(work_log)
+    calls = [call for item in work_log for call in item["tool_calls"]]
+    user_messages = [m.text for m in state["messages"] if isinstance(m, HumanMessage)]
+    research = [call["result"] for call in calls if call["tool"] != "budget_breakdown"]
+
+    issues = []
+    # Only the calls behind the current draft: an earlier, already rejected call must not
+    # count against a corrected revision.
+    draft_calls = work_log[draft_index]["tool_calls"] if draft_index >= 0 else []
+    for call in draft_calls:
+        if call["tool"] == "budget_breakdown":
+            bad_inputs = unsupported_budget_inputs(call["args"], user_messages + research)
+            if bad_inputs:
+                issues.append(
+                    f"budget_breakdown was given values that come from neither the user nor the research: "
+                    f"{', '.join(bad_inputs)}. Pass the user's budget exactly as they stated it, in their "
+                    "own currency, and prices exactly as the research found them; the tool does the conversion."
+                )
+    sources = [call["result"] for call in calls] + [m.text for m in state["messages"]]
+    missing = unsupported_amounts(draft, sources)
+    if missing:
+        issues.append(
+            f"These amounts don't match any tool result: {', '.join(missing)}. "
+            "Get them from budget_breakdown (or the calculator and convert_currency) and copy them exactly."
+        )
+    if not issues:
         return review
-    issue = (
-        f"These amounts don't match any tool result: {', '.join(missing)}. "
-        "Compute them with budget_breakdown (or the calculator) and copy the results exactly."
-    )
     summary = review.summary if not review.approved else "Some amounts weren't computed by a tool."
-    return review.model_copy(update={"approved": False, "issues": [*review.issues, issue], "summary": summary})
+    return review.model_copy(update={"approved": False, "issues": [*review.issues, *issues], "summary": summary})
 
 
 def _finalize_node(state: TravelState) -> dict[str, Any]:

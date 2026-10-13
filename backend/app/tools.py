@@ -160,8 +160,8 @@ def build_planning_tools(currency: CurrencyService) -> list[BaseTool]:
             items: The paid items, each with a name and a price per person.
             travellers: Number of travellers.
             currency_code: ISO code of the prices, e.g. "EUR".
-            budget: Optional budget amount, in budget_currency.
-            budget_currency: Optional ISO code of the budget, e.g. "SEK". Defaults to currency_code.
+            budget: The user's budget exactly as they stated it, in their own currency (e.g. 1500). Never convert it yourself.
+            budget_currency: ISO code of the user's budget, e.g. "SEK". The tool converts the prices into it. Defaults to currency_code.
         """
         lines = [
             BudgetLine(name=item.name, price_per_person=item.price_per_person)

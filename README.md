@@ -87,7 +87,7 @@ One user message runs like this:
 | `backend/app/graph.py` | Graph state, supervisor, agent and verifier nodes, guardrails, context building |
 | `backend/app/prompts.py` | The four role prompts |
 | `backend/app/tools.py` | The six tools, grouped by the agent that uses them |
-| `backend/app/checks.py` | Code-level check that every amount in a draft came from a tool |
+| `backend/app/checks.py` | Code-level checks that budget inputs and every money amount in a draft came from the user or a tool |
 | `backend/app/rag.py` | Chunking, embedding and vector search over the guides |
 | `backend/app/services/` | Plain-Python services (weather, currency, attractions, budget, calculator) with no LLM code |
 | `backend/app/assistant.py` | Composition root: builds the model, knowledge base, tools and graph |
@@ -137,7 +137,7 @@ Each agent only gets the tools its role needs: the planner can't look facts up, 
 ## Design decisions and trade-offs
 
 - **A supervisor instead of a fixed pipeline.** Each hop costs an extra LLM call, so a full plan with review takes about 10 to 15 calls. In return, simple questions take a one-agent path and only plans that the user will rely on get reviewed.
-- **Guarantees in code, not prompts.** In live runs the planner converted only the total and wrote the line items by hand, a few cents off and adjusted to add up, and the LLM verifier approved it. Telling the planner to use the calculator didn't fix it reliably. So budgets now come from `budget_breakdown`, which does all the maths in code, and the verifier step runs a deterministic check that every amount in the draft (any number with two decimals) matches a tool result. The LLM verifier focuses on what it's good at: constraints, completeness and grounding.
+- **Guarantees in code, not prompts.** Live runs exposed this three times. First the planner wrote budget line items by hand (a few cents off, adjusted to add up) and the LLM verifier approved them. Telling it to use the calculator didn't fix that. Then, given a `budget_breakdown` tool that does the maths in exact decimals, it converted the user's budget to euros by hand and passed in the wrong figure, which the tool echoed back so it looked backed up. So the verifier step now runs two deterministic checks: the budget and prices given to `budget_breakdown` must come from the user's message or the research, and every money amount in the draft (two-decimal numbers, and numbers next to a currency) must match a tool result. Each live failure is replayed as a test. The LLM verifier focuses on what it's good at: constraints, completeness and grounding.
 - **Small typed tools instead of generated queries.** The model fills in filter arguments; code does the filtering. That's predictable and safe, and tool errors stay readable.
 - **In-memory stores.** 46 chunks and a demo don't justify a vector database or a SQL checkpointer. Both are one-line swaps (for example Chroma or pgvector, and `SqliteSaver` or `PostgresSaver`).
 - **Testing orchestration without a model.** A scripted fake LLM drives the real graph, tools and API, so routing, the review loop, limits and memory are tested deterministically, offline, in under a second.

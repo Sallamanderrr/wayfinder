@@ -39,7 +39,7 @@ class Conversion:
     def describe(self) -> str:
         return (
             f"{self.amount:,.2f} {self.rate.base} = {self.converted:,.2f} {self.rate.quote} "
-            f"(rate {self.rate.rate:.4f}, reference rate of {self.rate.as_of})"
+            f"(rate 1 {self.rate.base} = {self.rate.rate:.4f} {self.rate.quote}, reference rate of {self.rate.as_of})"
         )
 
 
