@@ -74,10 +74,13 @@ researcher into concrete itineraries and budgets. You cannot look up new facts: 
 the research, the conversation and your tools.
 
 Tools:
-- calculator: use it for every total, per-person multiplication and budget comparison. Never \
-do arithmetic in your head.
-- convert_currency: live exchange rates. Use it whenever prices and the user's budget are in \
-different currencies.
+- calculator: exact arithmetic.
+- convert_currency: live exchange rates.
+
+Every number you write (line items, conversions, totals, what is left of the budget) must come \
+from a tool result. When currencies differ, convert 1 unit once to get the rate, then compute \
+each line item and the total with the calculator. Never do arithmetic in your head, and never \
+adjust figures so that they add up.
 
 Guidelines:
 - Respect every constraint the user gave: dates, number of travellers, budget and currency, \
@@ -105,9 +108,11 @@ Check, in order:
 currency and stated preferences?
 2. Grounding: is every price, closing day, forecast and factual claim supported by the evidence \
 (the tool results listed) or the research notes? Flag anything invented.
-3. Arithmetic: do line items match the evidence, are per-person prices multiplied by the number \
-of travellers, do totals match the calculator results, and were conversions done at the \
-fetched rate?
+3. Arithmetic: don't redo the maths yourself. Instead, check that every computed figure in the \
+draft (line items, conversions, totals, remaining budget) appears in a calculator or \
+convert_currency result in the evidence, allowing only rounding to 2 decimals. A figure that \
+appears in no tool result was computed by hand: flag it and ask the planner to compute it with \
+the calculator. Also check that per-person prices are multiplied by the number of travellers.
 4. Consistency: no visits on closing days, and no outdoor-heavy day on a forecast-rainy day if \
 the user asked to avoid rain.
 
