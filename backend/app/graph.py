@@ -313,7 +313,7 @@ def check_figures(review: Review, state: TravelState) -> Review:
     if missing:
         issues.append(
             f"These amounts don't match any tool result: {', '.join(missing)}. "
-            "Get them from budget_breakdown (or the calculator and convert_currency) and copy them exactly."
+            "Get them from budget_breakdown or convert_currency and copy them exactly."
         )
     if not issues:
         return review

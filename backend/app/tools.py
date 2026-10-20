@@ -2,7 +2,7 @@
 
 Each agent gets only the tools that match its role:
 - researcher: search_travel_guides (RAG), find_attractions (structured data), get_weather_forecast (API)
-- planner:    budget_breakdown (computation + API), calculator, convert_currency (API)
+- planner:    budget_breakdown (computation + API), convert_currency (API)
 
 Tools always return text. Expected failures (bad dates, unknown city, API down) are
 returned as "Error: ..." strings so the agent can recover or explain; `_never_raises`
@@ -22,7 +22,6 @@ from pydantic import BaseModel, Field
 from .rag import KnowledgeBase
 from .services.attractions import AttractionsDB
 from .services.budget import BudgetLine, budget_table
-from .services.calculator import CalculatorError, evaluate, format_number
 from .services.currency import CurrencyError, CurrencyService
 from .services.weather import WeatherError, WeatherService
 
@@ -163,12 +162,7 @@ def build_planning_tools(currency: CurrencyService) -> list[BaseTool]:
             budget: The user's budget exactly as they stated it, in their own currency (e.g. 1500). Never convert it yourself.
             budget_currency: ISO code of the user's budget, e.g. "SEK". The tool converts the prices into it. Defaults to currency_code.
         """
-        lines = [
-            BudgetLine(name=item.name, price_per_person=item.price_per_person)
-            if isinstance(item, BudgetItem)
-            else BudgetLine(name=item["name"], price_per_person=item["price_per_person"])
-            for item in items
-        ]
+        lines = [BudgetLine(name=item.name, price_per_person=item.price_per_person) for item in items]
         target = (budget_currency or currency_code).strip().upper()
         source = currency_code.strip().upper()
         try:
@@ -187,22 +181,6 @@ def build_planning_tools(currency: CurrencyService) -> list[BaseTool]:
 
     @tool(parse_docstring=True)
     @_never_raises
-    def calculator(expression: str) -> str:
-        """Evaluate an arithmetic expression exactly. Use it for every total, split and budget check.
-
-        Supports + - * / // % **, parentheses, and round(), min(), max(), abs().
-        Example: "2 * (18 + 10) + 2 * 3.10".
-
-        Args:
-            expression: The arithmetic expression to evaluate.
-        """
-        try:
-            return f"{expression} = {format_number(evaluate(expression))}"
-        except CalculatorError as exc:
-            return f"Error: {exc}"
-
-    @tool(parse_docstring=True)
-    @_never_raises
     def convert_currency(amount: float, from_currency: str, to_currency: str) -> str:
         """Convert money between currencies using today's central-bank reference rates (Frankfurter).
 
@@ -216,4 +194,4 @@ def build_planning_tools(currency: CurrencyService) -> list[BaseTool]:
         except CurrencyError as exc:
             return f"Error: {exc}"
 
-    return [budget_breakdown, calculator, convert_currency]
+    return [budget_breakdown, convert_currency]

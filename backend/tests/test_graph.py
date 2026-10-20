@@ -19,6 +19,13 @@ USER_REQUEST = (
 )
 
 
+SIGHTS = [
+    {"name": "National Tile Museum", "price_per_person": 8},
+    {"name": "Calouste Gulbenkian Museum", "price_per_person": 14},
+    {"name": "Tram 28", "price_per_person": 3.1},
+]
+
+
 def route(next_: str, task: str = "", reply: str = "", reason: str = "test") -> AIMessage:
     return structured("SupervisorDecision", reason=reason, next=next_, task=task, reply=reply)
 
@@ -40,7 +47,7 @@ def test_plan_goes_through_research_planning_review_and_revision(research_tools,
                 route("researcher", "Get the Lisbon forecast for 2026-10-17..18 and indoor attractions."),
                 route("planner", "Build the 2-day plan for 2 people within 1000 SEK."),
                 route("verifier", "Check the plan."),
-                route("planner", "Fix the issue: the total leaves out the tram fares."),
+                route("planner", "Fix the issue: the budget leaves out the tram fares."),
                 route("verifier", "Re-check the plan."),
                 route("finish"),
             ],
@@ -55,14 +62,13 @@ def test_plan_goes_through_research_planning_review_and_revision(research_tools,
                 AIMessage(content="Saturday is rainy, Sunday is dry. Indoor options: Tile Museum (8 EUR)..."),
             ],
             "planner": [
-                call_tool("convert_currency", "c1", amount=1000, from_currency="SEK", to_currency="EUR"),
-                call_tool("calculator", "k1", expression="2 * (8 + 14)"),
-                AIMessage(content="Draft v1: Tile Museum + Gulbenkian, total 44 EUR."),
-                call_tool("calculator", "k2", expression="2 * (8 + 14) + 2 * 3.10"),
-                AIMessage(content="Draft v2: Tile Museum, Gulbenkian and Tram 28, total 50.20 EUR."),
+                call_tool("budget_breakdown", "b1", items=SIGHTS[:2], travellers=2, currency_code="EUR", budget=1000, budget_currency="SEK"),
+                AIMessage(content="Draft v1: Tile Museum and Gulbenkian, 492.57 SEK of your 1000 SEK."),
+                call_tool("budget_breakdown", "b2", items=SIGHTS, travellers=2, currency_code="EUR", budget=1000, budget_currency="SEK"),
+                AIMessage(content="Draft v2: Tile Museum, Gulbenkian and Tram 28, 561.98 SEK. 438.02 SEK left."),
             ],
             "verifier": [
-                structured("Review", issues=["The total leaves out the tram fares."], approved=False, summary="Total is incomplete."),
+                structured("Review", issues=["The budget leaves out the tram fares."], approved=False, summary="Budget is incomplete."),
                 structured("Review", issues=[], approved=True, summary="Plan matches the evidence."),
             ],
         },
@@ -78,18 +84,17 @@ def test_plan_goes_through_research_planning_review_and_revision(research_tools,
     tool_results = {e["tool"]: e["content"] for e in events if e["type"] == "tool_result"}
     assert "rain" in tool_results["get_weather_forecast"]
     assert "National Tile Museum" in tool_results["find_attractions"]
-    assert "1,000.00 SEK = 89.30 EUR" in tool_results["convert_currency"]
-    assert tool_results["calculator"].endswith("= 50.2")
+    assert "| **Total** | | **50.20** | **561.98** |" in tool_results["budget_breakdown"]
 
     reviews = [e["approved"] for e in events if e["type"] == "review"]
     assert reviews == [False, True]
-    assert events[-1] == {"type": "final", "content": "Draft v2: Tile Museum, Gulbenkian and Tram 28, total 50.20 EUR."}
+    assert events[-1] == {"type": "final", "content": "Draft v2: Tile Museum, Gulbenkian and Tram 28, 561.98 SEK. 438.02 SEK left."}
 
     # The revising planner saw the verifier's issue; the verifier saw raw tool evidence.
     planner_prompts = [msgs[-1].text for role, msgs in llm.calls if role == "planner" and isinstance(msgs[-1], HumanMessage)]
-    assert "The total leaves out the tram fares." in planner_prompts[-1]
+    assert "The budget leaves out the tram fares." in planner_prompts[-1]
     verifier_prompt = next(msgs[-1].text for role, msgs in llm.calls if role == "verifier")
-    assert "convert_currency" in verifier_prompt and "89.30 EUR" in verifier_prompt
+    assert "budget_breakdown" in verifier_prompt and "492.57" in verifier_prompt
 
     # Only the user message and the final answer are persisted.
     history = graph.get_state({"configurable": {"thread_id": "t1"}}).values["messages"]

@@ -1,7 +1,7 @@
 """Budget tables computed in code, with exact decimal arithmetic.
 
 Live runs showed the model doing per-line arithmetic in its head (off by a few cents,
-adjusted so the rows matched a converted total) even when told to use the calculator.
+adjusted so the rows matched a converted total) even when told to use a calculator tool.
 So the planner hands over the line items and this module does all the maths: per-person
 price x travellers, conversion, totals and the budget check.
 

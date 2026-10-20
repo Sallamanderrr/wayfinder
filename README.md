@@ -1,153 +1,127 @@
 # Wayfinder: a multi-agent travel planner
 
-Wayfinder plans city breaks in Lisbon, Barcelona, Rome, Paris and Stockholm. A **supervisor** agent decides, step by step, which specialist works on a question next: a **researcher** that gathers facts (RAG over travel guides, an attractions database, a live weather API), a **planner** that builds itineraries and budgets (a budget calculator, live exchange rates), and a **verifier** that checks the draft against the user's constraints and the raw tool results, backed by a code-level check that every amount came from a tool. The React chat UI shows the route the agents take while they work.
+A chat assistant that plans city breaks in Lisbon, Barcelona, Rome, Paris and Stockholm. A **supervisor** decides which agent works on each step: a **researcher** finds facts, a **planner** builds itineraries and budgets, and a **verifier** checks the result before it reaches the user.
 
-**Stack:** LangGraph + LangChain 1.x, OpenAI (`gpt-4.1-mini`, `text-embedding-3-small`), FastAPI with Server-Sent Events, React 19 + TypeScript + Vite, Open-Meteo and Frankfurter (free public APIs, no keys).
+**Stack:** LangGraph, LangChain, OpenAI (`gpt-4.1-mini` and `text-embedding-3-small`), FastAPI, React + TypeScript (Vite). Live data comes from Open-Meteo (weather) and Frankfurter (exchange rates), which need no API keys.
 
-## Running it
+## How to run it
 
-You need Python 3.11+, Node.js 20.19+ (or 22.12+) and an OpenAI API key.
-
-**Backend** (terminal 1):
+You need Python 3.11+, Node.js 20.19+ and an OpenAI API key.
 
 ```bash
+# Terminal 1: backend
 cd backend
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env             # then set OPENAI_API_KEY in .env
+cp .env.example .env               # then add your OPENAI_API_KEY
 uvicorn app.main:app --reload --port 8000
-```
 
-**Frontend** (terminal 2):
-
-```bash
+# Terminal 2: frontend
 cd frontend
 npm install
-npm run dev                      # open http://localhost:5173 (it proxies /api to port 8000)
+npm run dev                        # open http://localhost:5173
 ```
 
-**Tests** (no API key or network needed; the LLM and the public APIs are replaced by test doubles):
-
-```bash
-cd backend && pytest
-```
-
-The model, temperature and agent limits are set in `backend/.env` (see `.env.example`). Any chat model with tool calling and structured output works, using LangChain's `provider:model` format.
+Tests run offline, without a key: `cd backend && pytest`.
 
 ## Example questions
 
-The first five are also clickable in the UI's start screen.
-
-| Question | Shows | Typical route |
-|---|---|---|
-| How do I get from Rome's airport to the centre, and what does it cost? | RAG with a city filter and citations | Researcher → `search_travel_guides` |
-| Which neighbourhood in Stockholm suits a first visit? | RAG | Researcher → `search_travel_guides` |
-| What's the weather in Barcelona over the next three days? | Public API tool | Researcher → `get_weather_forecast` |
-| Which museums in Paris are open on Mondays, and what do they cost in SEK? | Structured data, then a second agent and tool | Researcher → `find_attractions` → Planner → `convert_currency` |
-| Plan two days in Lisbon this weekend for two people. Our budget for sights is 1,500 SEK, and we prefer indoor sights if it rains. | Full multi-agent collaboration with review | Researcher (forecast, attractions, guides) → Planner (`budget_breakdown`) → Verifier, back to the Planner if the Verifier finds issues |
-| *(follow-up)* Make it three days and add a day trip to Sintra. | Conversation memory | Uses the previous turn's plan |
-| How much is 2,500 SEK in euros? | Routing straight to the right agent | Planner → `convert_currency` |
-| What's the weather usually like in Rome around Christmas? | Choosing RAG over the API | Researcher → guides' climate notes (the forecast only reaches 16 days ahead) |
-| Hi, what can you do? / Plan a trip for me. | No agents needed | Supervisor replies, or asks one clarifying question |
+| Question | Shows |
+|---|---|
+| How do I get from Rome's airport to the centre, and what does it cost? | RAG: the researcher searches the Rome guide and cites it |
+| What's the weather in Barcelona over the next three days? | Tool use: live weather API |
+| Which museums in Paris are open on Mondays, and what do they cost in SEK? | Two agents: researcher queries the attractions data, planner converts prices |
+| Plan two days in Lisbon this weekend for two people. Our budget for sights is 1,500 SEK, and we prefer indoor sights if it rains. | All agents: research → plan → review, and back to the planner if the review fails |
+| *(follow-up)* Make it three days and add a day trip to Sintra. | Conversation memory |
+| Hi, what can you do? | No agents needed: the supervisor answers directly |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    UI["React chat UI"] -- "POST /api/chat<br/>(SSE stream)" --> API["FastAPI"]
+    UI["React chat UI"] -- "POST /api/chat<br/>(streamed events)" --> API["FastAPI"]
     API --> S
     subgraph G["LangGraph graph"]
-        S{"Supervisor"} -- "research" --> R["Researcher"]
-        S -- "plan / calculate" --> P["Planner"]
-        S -- "review" --> V["Verifier"]
+        S{"Supervisor"} --> R["Researcher"]
+        S --> P["Planner"]
+        S --> V["Verifier"]
         R --> S
         P --> S
         V --> S
-        S -- "finish" --> F["Finalize"]
+        S -- "finish" --> F["Final answer"]
     end
-    R --- KB[("Travel guides<br/>(RAG)")]
+    R --- KB[("Travel guides (RAG)")]
     R --- DB[("attractions.csv")]
-    R --- WX(["Open-Meteo"])
-    P --- CALC(["Budget calculator<br/>and calculator"])
-    P --- FX(["Frankfurter"])
+    R --- WX(["Weather API"])
+    P --- BU(["Budget tool"])
+    P --- FX(["Exchange-rate API"])
 ```
 
-One user message runs like this:
+For each user message:
 
-1. The UI posts the message with its conversation id (`thread_id`). The API streams progress back as Server-Sent Events.
-2. LangGraph appends the message to the thread's history (kept by the checkpointer) and clears the per-turn work log.
-3. The **supervisor** reads the conversation and the work log, and returns a structured decision: `{reason, next, task, reply}`. Code-level guardrails can override it (see below).
-4. The chosen agent runs with the conversation, the work log so far and its task. Each tool call and result is streamed to the UI and recorded in the work log.
-5. Control returns to the supervisor, which picks the next step. This repeats until it chooses `finish`.
-6. **Finalize** turns the latest draft into the answer. Only the user's message and that answer are stored in the history.
+1. The supervisor reads the conversation and what has been done so far, and picks the next agent (or decides to finish).
+2. That agent works on its task with its own tools. Every tool call and result is streamed to the UI.
+3. Control returns to the supervisor. This repeats until the answer is ready.
+4. The final answer is saved in the conversation history.
 
-| Path | Contents |
+| File | What it does |
 |---|---|
-| `backend/app/graph.py` | Graph state, supervisor, agent and verifier nodes, guardrails, context building |
-| `backend/app/prompts.py` | The four role prompts |
-| `backend/app/tools.py` | The six tools, grouped by the agent that uses them |
-| `backend/app/checks.py` | Code-level checks that budget inputs and every money amount in a draft came from the user or a tool |
-| `backend/app/rag.py` | Chunking, embedding and vector search over the guides |
-| `backend/app/services/` | Plain-Python services (weather, currency, attractions, budget, calculator) with no LLM code |
-| `backend/app/assistant.py` | Composition root: builds the model, knowledge base, tools and graph |
-| `backend/app/main.py` | FastAPI app: streaming chat endpoint, conversation history, health check |
-| `backend/data/` | Knowledge base (six Markdown guides) and `attractions.csv` |
-| `backend/tests/` | Offline tests, including full graph runs with a scripted LLM |
-| `frontend/src/` | Chat UI; `RouteTrace.tsx` draws the agents' route from the event stream |
+| `backend/app/graph.py` | The LangGraph graph: supervisor, agents, verifier, limits |
+| `backend/app/prompts.py` | The instructions for each agent |
+| `backend/app/tools.py` | The five tools |
+| `backend/app/rag.py` | Splitting, embedding and searching the travel guides |
+| `backend/app/checks.py` | Code checks that every money amount came from a tool |
+| `backend/app/services/` | Weather, currency, attractions and budget logic (no LLM code) |
+| `backend/app/main.py` | The API: chat endpoint and conversation history |
+| `backend/data/` | The six guides and `attractions.csv` |
+| `frontend/src/` | The chat UI; `RouteTrace.tsx` shows the agents' steps |
 
 ## Agents
 
-| Agent | Responsibility | Built as | Tools |
-|---|---|---|---|
-| Supervisor | Chooses who acts next and writes their task; decides whether a draft needs review and when to stop; answers greetings and asks clarifying questions itself | LLM call with structured output (`SupervisorDecision`) | None |
-| Researcher | Finds facts and cites where each came from | Tool-calling (ReAct) agent from LangChain's `create_agent` | `search_travel_guides`, `find_attractions`, `get_weather_forecast` |
-| Planner | Turns research into itineraries and budgets, and does conversions | Tool-calling (ReAct) agent | `budget_breakdown`, `calculator`, `convert_currency` |
-| Verifier | Checks the latest draft against the user's constraints and the raw tool results; approves it or lists fixable issues. Code then checks every amount in the draft against the tool results | LLM call with structured output (`Review`) plus a deterministic check | None (it reads the evidence) |
+| Agent | Job | Tools |
+|---|---|---|
+| Supervisor | Decides who works next and when the answer is done. Answers greetings and asks clarifying questions itself. | None |
+| Researcher | Finds facts and says where each one came from. | `search_travel_guides`, `find_attractions`, `get_weather_forecast` |
+| Planner | Turns the research into a day-by-day plan and a budget. | `budget_breakdown`, `convert_currency` |
+| Verifier | Checks the draft against the user's request and the tool results; approves it or lists problems. | None |
 
-Each agent only gets the tools its role needs: the planner can't look facts up, so it can only plan from evidence the researcher gathered. The verifier is given the raw tool outputs rather than the agents' summaries of them, so a price that changed between research and plan is something it can catch.
+The supervisor and verifier return structured output (Pydantic models), so routing decisions are never parsed from free text. The researcher and planner are tool-calling agents built with LangChain's `create_agent`.
 
 ## Tools and RAG
 
-| Tool | Type | Source |
-|---|---|---|
-| `search_travel_guides` | RAG | Six Markdown guides (one per city, plus general trip-planning advice), 46 chunks |
-| `find_attractions` | Structured data query | `attractions.csv` (51 attractions): filter by city, category, indoor/outdoor, maximum price, and whether it's open on a given weekday or date |
-| `get_weather_forecast` | Public API | Open-Meteo geocoding and daily forecast, for today and the next 15 days |
-| `convert_currency` | Public API | Frankfurter daily reference rates, cached for an hour |
-| `budget_breakdown` | Computation (+ API) | Per-person prices × travellers, conversion, totals and budget check, in exact decimal arithmetic; returns a finished table |
-| `calculator` | Computation | Any other arithmetic, parsed with Python's `ast` module, never `eval` |
+| Tool | Type |
+|---|---|
+| `search_travel_guides` | RAG over six Markdown guides |
+| `find_attractions` | Query structured data: filter 51 attractions by city, category, indoor/outdoor, price and opening day |
+| `get_weather_forecast` | Public API (Open-Meteo), up to 16 days ahead |
+| `convert_currency` | Public API (Frankfurter) |
+| `budget_breakdown` | Calculation: prices × travellers, currency conversion, totals and budget check |
 
-**RAG pipeline.** Each guide is split into one chunk per `##` section ("Getting around", "Typical costs"…), because each section answers one kind of question. Every chunk starts with `City — Section` so its embedding carries that context, and it keeps `source`, `section` and `city` as metadata. At startup the chunks are embedded with `text-embedding-3-small` in one batched call and held in LangChain's in-memory vector store. Search returns the top 4 chunks by cosine similarity, optionally filtered by city, so a question about Rome's airport can't return Lisbon's. Each result carries its source, which the agents cite as `(source: rome.md › Getting around)`.
-
-**Whether to use RAG is a decision, not a fixed step.** Retrieval is a tool, so the researcher calls it only when the question needs it: a weather question skips the guides, while "weather around Christmas" uses the guides' climate notes because the forecast doesn't reach that far.
-
-**Failures are information.** Tools return `Error: …` text instead of raising, for both expected problems (a date beyond the forecast range, an unknown city) and unexpected ones. The agent can then retry, fall back to another source, or explain the gap, and one failed call doesn't end the turn.
+**RAG:** each guide is split by its `##` sections (for example "Getting around"), embedded once at startup, and kept in memory. A search returns the 4 most similar sections, optionally only from one city, and every result carries its source so the answer can cite it. Searching the guides is a tool, so the researcher decides when it's needed: a weather question doesn't use it.
 
 ## How the agents coordinate
 
-- **Supervisor pattern.** Agents never call each other. Every handoff goes through the supervisor, so routing logic lives in one place, the trace is easy to follow, and adding an agent means adding a node and a line to the supervisor's prompt.
-- **Shared work log (a blackboard).** The graph state holds a per-turn `work_log`. Every agent run appends `{agent, task, output, tool_calls, verdict}`. The supervisor reads a condensed log to decide what's next, agents read the full log as context, and the verifier gets the raw tool evidence plus the draft.
-- **Structured decisions.** The supervisor's routing and the verifier's verdict come back as Pydantic models via structured output, never parsed from free text. The `reason` field comes first, so the model explains before it decides; the UI shows these reasons.
-- **Review loop.** When the verifier requests changes, the supervisor sends the work back to the agent that can fix it, quoting the issues in the new task, and usually asks for a second review.
-- **Guardrails in code.** The LLM makes the routing decisions, but code enforces limits so every turn ends: at most 6 agent runs and 2 reviews per message, no review without a draft, and at most 12 steps for each agent run. If the last review failed and the limits are reached, the answer is shown with the verifier's concerns attached rather than hiding them.
-- **Conversation state.** A LangGraph checkpointer stores each thread's history. Only user messages and final answers go into it; the work log is per-turn scratch space, so follow-up questions stay cheap. The UI restores a conversation after a page reload through `GET /api/threads/{thread_id}`.
-- **Streaming.** Nodes emit progress events through LangGraph's stream writer: `route`, `tool_call`, `tool_result`, `agent_output`, `review`, then `final` (or `error`). The API forwards them as SSE, and the UI draws them as a transit-style route.
+- **Through the supervisor.** Agents never call each other directly; every step goes through the supervisor.
+- **A shared work log.** Each agent's task, tool calls and result are added to a work log in the graph state. The supervisor reads it to decide the next step, and the next agent reads it as context.
+- **A review loop.** If the verifier finds problems, the supervisor sends the work back to the planner or researcher with the problems listed.
+- **Limits in code.** At most 6 agent runs and 2 reviews per message, so a turn always ends. If the last review still failed, the answer is shown with the verifier's concerns attached.
+- **Memory.** A LangGraph checkpointer keeps each conversation's history by `thread_id`, so follow-up questions work.
 
-## Design decisions and trade-offs
+## Design decisions
 
-- **A supervisor instead of a fixed pipeline.** Each hop costs an extra LLM call, so a full plan with review takes about 10 to 15 calls. In return, simple questions take a one-agent path and only plans that the user will rely on get reviewed.
-- **Guarantees in code, not prompts.** Live runs exposed this three times. First the planner wrote budget line items by hand (a few cents off, adjusted to add up) and the LLM verifier approved them. Telling it to use the calculator didn't fix that. Then, given a `budget_breakdown` tool that does the maths in exact decimals, it converted the user's budget to euros by hand and passed in the wrong figure, which the tool echoed back so it looked backed up. So the verifier step now runs two deterministic checks: the budget and prices given to `budget_breakdown` must come from the user's message or the research, and every money amount in the draft (two-decimal numbers, and numbers next to a currency) must match a tool result. Each live failure is replayed as a test. The LLM verifier focuses on what it's good at: constraints, completeness and grounding.
-- **Small typed tools instead of generated queries.** The model fills in filter arguments; code does the filtering. That's predictable and safe, and tool errors stay readable.
-- **In-memory stores.** 46 chunks and a demo don't justify a vector database or a SQL checkpointer. Both are one-line swaps (for example Chroma or pgvector, and `SqliteSaver` or `PostgresSaver`).
-- **Testing orchestration without a model.** A scripted fake LLM drives the real graph, tools and API, so routing, the review loop, limits and memory are tested deterministically, offline, in under a second.
+- **A supervisor rather than a fixed pipeline.** Simple questions use one agent; only plans with numbers get reviewed. The cost is extra LLM calls: about 10–15 for a full reviewed plan.
+- **Numbers are computed and checked in code.** In live testing, the planner did budget arithmetic in its head (a few cents off) and the LLM verifier approved it, even when told to use a calculator. So `budget_breakdown` does all the maths, and `checks.py` rejects any draft containing an amount that doesn't come from a tool or the user. Those live failures are now tests.
+- **Small tools with typed arguments.** The model fills in filters; code does the work. That's predictable and easy to test.
+- **In-memory storage.** Enough for a demo with 46 text sections. A vector database and a persistent checkpointer would be simple swaps.
+- **Tests without a real model.** A scripted fake LLM drives the real graph, tools and API, so the orchestration is tested offline in about a second.
 
 ## What I would improve with more time
 
-- **Evaluation.** A set of questions with expected routes, tool calls and answer checks (exact checks plus an LLM judge), run in CI to compare prompts and models.
-- **More deterministic checks.** Extend the code-level checks beyond amounts: closing days against the attractions data, dates against the forecast, and the travellers count against the request.
-- **Better retrieval.** Hybrid search (BM25 plus embeddings), re-ranking, a relevance threshold to drop weak matches, and more sources.
-- **Parallel research.** Fan out independent lookups (weather, attractions, guides) with LangGraph's `Send` API to cut latency.
-- **Answer streaming.** Stream the final answer token by token. Today it arrives in one piece because only reviewed drafts are shown.
-- **Production concerns.** Persistent storage, authentication with per-user threads, rate limiting, retries with backoff for external APIs, tracing and cost tracking (for example LangSmith), and Docker Compose.
-- **Human in the loop.** Use a LangGraph interrupt to confirm assumptions such as dates and budget before planning.
+- An evaluation set of questions with expected routes and answers, run automatically to compare prompts and models.
+- More code checks: closing days, dates and traveller counts, not only amounts.
+- Better retrieval: keyword plus vector search, and dropping weak matches.
+- Running independent research steps in parallel to cut waiting time.
+- Production work: persistent storage, user accounts, retries for the external APIs, monitoring and cost tracking.
+
+Built with the help of an AI coding assistant (Claude), as the brief allowed.

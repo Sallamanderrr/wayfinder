@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -44,16 +43,10 @@ class Conversion:
 
 
 class CurrencyService:
-    def __init__(
-        self,
-        client: httpx.Client,
-        cache_ttl_seconds: float = 3600,
-        clock: Callable[[], float] = time.monotonic,
-    ):
+    def __init__(self, client: httpx.Client, cache_ttl_seconds: float = 3600):
         self._client = client
         self._ttl = cache_ttl_seconds
-        self._clock = clock
-        self._cache: dict[tuple[str, str], tuple[float, Rate]] = {}
+        self._cache: dict[tuple[str, str], tuple[float, Rate]] = {}  # (base, quote) -> (fetched at, rate)
 
     def convert(self, amount: float, from_currency: str, to_currency: str) -> Conversion:
         rate = self.rate(from_currency, to_currency)
@@ -64,7 +57,7 @@ class CurrencyService:
         if base == quote:
             return Rate(base, quote, 1.0, date.today().isoformat())
         cached = self._cache.get((base, quote))
-        if cached and self._clock() - cached[0] < self._ttl:
+        if cached and time.monotonic() - cached[0] < self._ttl:
             return cached[1]
         try:
             response = self._client.get(RATE_URL.format(base=base.lower(), quote=quote.lower()))
@@ -78,7 +71,7 @@ class CurrencyService:
             rate = Rate(base, quote, float(payload["rate"]), str(payload.get("date", "")))
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
             raise CurrencyError(f"Unexpected response from the exchange-rate service ({exc}).") from exc
-        self._cache[(base, quote)] = (self._clock(), rate)
+        self._cache[(base, quote)] = (time.monotonic(), rate)
         return rate
 
 

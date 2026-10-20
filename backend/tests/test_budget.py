@@ -67,7 +67,7 @@ def test_budget_tool_fetches_the_rate(planning_tools):
 
 def test_flags_amounts_no_tool_produced():
     draft = "| Tile | 179.20 |\n| Tram | 69.44 |\n| Total | 1,211.90 |\nRate 11.2006, 1.5 h, on 2026-10-17."
-    sources = ["108.2 EUR = 1,211.90 SEK (rate 11.2006)", "16 * 11.2006 = 179.2096", "6.2 * 11.2006 = 69.44372"]
+    sources = ["108.2 EUR = 1,211.90 SEK (rate 11.2006)", "179.2096", "69.44372"]
     # 179.2096 rounds to 179.21, so 179.20 was made up; 69.44 and 1,211.90 are backed by tools.
     assert unsupported_amounts(draft, sources) == ["179.20"]
 

@@ -5,50 +5,12 @@ from datetime import date
 import pytest
 from conftest import TODAY
 
-from app.services.calculator import CalculatorError, evaluate, format_number
 from app.services.currency import CurrencyError
 from app.services.weather import WeatherError
 
 
 def by_name(tools):
     return {tool.name: tool for tool in tools}
-
-
-# --- calculator --------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("expression", "expected"),
-    [
-        ("2 * (18 + 10) + 2 * 3.10", 62.2),
-        ("1,250.50 + 49.50", 1300),
-        ("round(1000 * 0.0893, 2)", 89.3),
-        ("max(12, 30) - min(5, 9)", 25),
-        ("-3 + 10 % 4", -1),
-    ],
-)
-def test_calculator_evaluates_arithmetic(expression, expected):
-    assert evaluate(expression) == pytest.approx(expected)
-
-
-@pytest.mark.parametrize(
-    "expression",
-    ["__import__('os').system('ls')", "open('x')", "a + 1", "9 ** 9 ** 9", "1 / 0", "", "(1).real"],
-)
-def test_calculator_rejects_anything_but_arithmetic(expression):
-    with pytest.raises(CalculatorError):
-        evaluate(expression)
-
-
-def test_format_number():
-    assert format_number(44.0) == "44"
-    assert format_number(62.200000001) == "62.2"
-
-
-def test_calculator_tool_reports_errors_as_text(planning_tools):
-    calculator = by_name(planning_tools)["calculator"]
-    assert calculator.invoke({"expression": "2 * 22"}) == "2 * 22 = 44"
-    assert calculator.invoke({"expression": "import os"}).startswith("Error:")
 
 
 # --- attractions (structured data) -------------------------------------------------------
