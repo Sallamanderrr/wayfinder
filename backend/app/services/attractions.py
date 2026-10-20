@@ -29,7 +29,8 @@ class Attraction:
     notes: str
 
     def describe(self) -> str:
-        price = "free entry" if self.price == 0 else f"{self.price:g} {self.currency} per adult"
+        # "0 EUR" spelled out, so a free sight's price is a number the budget checks can find.
+        price = f"free entry (0 {self.currency})" if self.price == 0 else f"{self.price:g} {self.currency} per adult"
         parts = [
             f"{self.name} ({self.category}, {self.neighbourhood})",
             price,

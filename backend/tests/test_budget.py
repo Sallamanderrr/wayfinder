@@ -103,6 +103,15 @@ def test_flags_hand_computed_whole_amounts():
     assert unsupported_amounts(draft, sources) == ["703"]  # 136 slips through: the tool echoed it ...
 
 
+def test_free_sights_can_go_into_the_budget(research_tools):
+    # From a live run: free sights passed at price 0 were flagged, because the data said
+    # "free entry" in words. The attractions data now spells out the 0.
+    found = next(t for t in research_tools if t.name == "find_attractions").invoke({"city": "Lisbon", "max_price": 0})
+    assert "LX Factory (market, Alcântara) | free entry (0 EUR)" in found
+    args = {"items": [{"name": "LX Factory", "price_per_person": 0}], "budget": 1500}
+    assert unsupported_budget_inputs(args, ["Our budget for sights is 1,500 SEK", found]) == []
+
+
 def test_flags_budget_inputs_that_the_user_never_gave():
     # ... which is why the tool's inputs are checked too.
     args = {
