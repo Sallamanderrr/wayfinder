@@ -293,6 +293,47 @@ def test_revision_after_the_last_allowed_review_is_still_checked(research_tools,
     assert ("Heads-up from the verifier" in final) is warned
 
 
+def test_over_budget_plan_is_sent_back_even_if_the_verifier_approves(research_tools, planning_tools):
+    # From a live run: a plan 14.84 SEK over the user's budget was approved because it
+    # mentioned the overage. The budget is a hard constraint, so code now rejects it.
+    oceanarium = {"name": "Lisbon Oceanarium", "price_per_person": 25}
+    tile = {"name": "National Tile Museum", "price_per_person": 8}
+    budget = {"travellers": 2, "currency_code": "EUR", "budget": 500, "budget_currency": "SEK"}
+    _, graph = make_graph(
+        {
+            "supervisor": [
+                route("researcher", "Lisbon sights."),
+                route("planner", "Plan within 500 SEK."),
+                route("verifier", "Check."),
+                route("planner", "Fix the budget."),
+                route("verifier", "Re-check."),
+                route("finish"),
+            ],
+            "researcher": [
+                call_tool("find_attractions", "a1", city="Lisbon", indoor=True),
+                AIMessage(content="Oceanarium 25 EUR, Tile Museum 8 EUR (attractions database)."),
+            ],
+            "planner": [
+                call_tool("budget_breakdown", "b1", items=[oceanarium, tile], **budget),
+                AIMessage(content="Oceanarium and Tile Museum: 738.86 SEK, a little over budget."),
+                call_tool("budget_breakdown", "b2", items=[tile], **budget),
+                AIMessage(content="Tile Museum only: 179.12 SEK, 320.88 SEK left."),
+            ],
+            "verifier": [
+                structured("Review", issues=[], approved=True, summary="Over budget, but it says so."),
+                structured("Review", issues=[], approved=True, summary="Fits the budget."),
+            ],
+        },
+        research_tools,
+        planning_tools,
+    )
+    events = run_turn(graph, "t10", "Plan a Lisbon day for 2. Our budget for sights is 500 SEK.")
+    first, second = [e for e in events if e["type"] == "review"]
+    assert first["approved"] is False and "doesn't fit the user's budget" in first["issues"][0]
+    assert second["approved"] is True
+    assert events[-1]["content"] == "Tile Museum only: 179.12 SEK, 320.88 SEK left."
+
+
 def test_turn_is_cut_off_at_the_agent_run_limit(research_tools, planning_tools):
     _, graph = make_graph(
         {

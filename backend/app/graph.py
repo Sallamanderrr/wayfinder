@@ -293,7 +293,8 @@ def figure_issues(state: TravelState) -> list[str]:
 
     1. The budget and prices given to budget_breakdown must come from the conversation or
        this turn's research (otherwise a hand-converted budget would look backed up).
-    2. Every money amount in the draft must match a tool result or the conversation.
+    2. The plan must fit the budget: the last budget_breakdown result can't say "Over budget".
+    3. Every money amount in the draft must match a tool result or the conversation.
     The conversation includes earlier answers, which were checked in their own turn, so a
     follow-up can reuse their figures.
     """
@@ -307,6 +308,14 @@ def figure_issues(state: TravelState) -> list[str]:
     # Only the calls behind the current draft: an earlier, already rejected call must not
     # count against a corrected revision.
     draft_calls = work_log[draft_index]["tool_calls"] if draft_index >= 0 else []
+    budget_calls = [call for call in draft_calls if call["tool"] == "budget_breakdown"]
+    if budget_calls:
+        verdict = next((line for line in budget_calls[-1]["result"].splitlines() if line.startswith("Over budget")), None)
+        if verdict:
+            issues.append(
+                f"The plan doesn't fit the user's budget ({verdict.rstrip('.')}). Drop or swap a paid sight, "
+                "then call budget_breakdown again with exactly the sights in the plan."
+            )
     for call in draft_calls:
         if call["tool"] == "budget_breakdown":
             bad_inputs = unsupported_budget_inputs(call["args"], conversation + research)

@@ -111,7 +111,7 @@ The supervisor and verifier return structured output (Pydantic models), so routi
 ## Design decisions
 
 - **A supervisor rather than a fixed pipeline.** Simple questions use one agent; only plans with numbers get reviewed. The cost is extra LLM calls: about 10–15 for a full reviewed plan.
-- **Numbers are computed and checked in code.** In live testing, the planner did budget arithmetic in its head (a few cents off) and the LLM verifier approved it, even when told to use a calculator. So `budget_breakdown` does all the maths, and `checks.py` rejects any draft containing an amount that doesn't come from a tool or the user. Those live failures are now tests.
+- **Numbers are computed and checked in code.** In live testing, the planner did budget arithmetic in its head (a few cents off) and the LLM verifier approved it, even when told to use a calculator. So `budget_breakdown` does all the maths, and `checks.py` rejects any draft containing an amount that doesn't come from a tool or the user. Code also sends back any plan that goes over the user's budget. Those live failures are now tests.
 - **Small tools with typed arguments.** The model fills in filters; code does the work. That's predictable and easy to test.
 - **In-memory storage.** Enough for a demo with 46 text sections. A vector database and a persistent checkpointer would be simple swaps.
 - **Tests without a real model.** A scripted fake LLM drives the real graph, tools and API, so the orchestration is tested offline in about a second.
