@@ -207,6 +207,50 @@ def test_hand_converted_budget_is_rejected_and_fixed(research_tools, planning_to
     assert "1,320.88 SEK left" in events[-1]["content"]  # 1,500 - 16 x 11.1948 = 1,320.88
 
 
+def test_follow_up_may_reuse_prices_from_the_previous_answer(research_tools, planning_tools):
+    # Replays a live run: the follow-up added a Monday, this turn's research only covered
+    # Monday (the Tile Museum is closed then), and the planner reused the museum's price from
+    # the previous answer. That price was checked last turn, so it must not be flagged now.
+    tile = {"name": "National Tile Museum", "price_per_person": 8}
+    gulbenkian = {"name": "Calouste Gulbenkian Museum", "price_per_person": 14}
+    budget = {"travellers": 2, "currency_code": "EUR", "budget": 1500, "budget_currency": "SEK"}
+    _, graph = make_graph(
+        {
+            "supervisor": [
+                route("researcher", "Lisbon indoor sights for Saturday."),
+                route("planner", "Plan Saturday within 1,500 SEK."),
+                route("finish"),
+                route("researcher", "Lisbon indoor sights for Monday."),
+                route("planner", "Add Monday to the plan."),
+                route("verifier", "Check."),
+                route("finish"),
+            ],
+            "researcher": [
+                call_tool("find_attractions", "a1", city="Lisbon", indoor=True, max_price=10, open_on="Saturday"),
+                AIMessage(content="National Tile Museum, 8 EUR (attractions database)."),
+                call_tool("find_attractions", "a2", city="Lisbon", indoor=True, open_on="Monday"),
+                AIMessage(content="Monday: Calouste Gulbenkian Museum, 14 EUR (attractions database)."),
+            ],
+            "planner": [
+                call_tool("budget_breakdown", "b1", items=[tile], **budget),
+                AIMessage(content="Saturday: National Tile Museum, 8 EUR per person, 179.12 SEK for two."),
+                call_tool("budget_breakdown", "b2", items=[tile, gulbenkian], **budget),
+                AIMessage(content="Saturday Tile Museum, Monday Gulbenkian: 492.57 SEK, 1,007.43 SEK left."),
+            ],
+            "verifier": [structured("Review", issues=[], approved=True, summary="Looks right.")],
+        },
+        research_tools,
+        planning_tools,
+    )
+    run_turn(graph, "t9", "Plan Saturday in Lisbon for 2. Our budget for sights is 1,500 SEK.")
+    events = run_turn(graph, "t9", "Add a Monday.")
+    monday_research = next(e["content"] for e in events if e["type"] == "tool_result")
+    assert "Tile Museum" not in monday_research  # so its price only exists in the earlier answer
+    review = next(e for e in events if e["type"] == "review")
+    assert review["approved"] is True, review["issues"]
+    assert "Heads-up" not in events[-1]["content"]
+
+
 @pytest.mark.parametrize(
     ("revision", "warned"),
     [

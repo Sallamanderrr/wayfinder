@@ -292,15 +292,16 @@ def check_figures(review: Review, state: TravelState) -> Review:
 def figure_issues(state: TravelState) -> list[str]:
     """Code checks on the latest draft's money figures (the LLM can't reliably check arithmetic).
 
-    1. The budget and prices given to budget_breakdown must come from the user's messages
-       or the research results (otherwise a hand-converted budget would look backed up).
-    2. Every money amount in the draft must match a tool result or an earlier message, so a
-       follow-up can reuse figures that were already checked.
+    1. The budget and prices given to budget_breakdown must come from the conversation or
+       this turn's research (otherwise a hand-converted budget would look backed up).
+    2. Every money amount in the draft must match a tool result or the conversation.
+    The conversation includes earlier answers, which were checked in their own turn, so a
+    follow-up can reuse their figures.
     """
     work_log = state["work_log"]
     draft_index, draft = latest_draft(work_log)
     calls = [call for item in work_log for call in item["tool_calls"]]
-    user_messages = [m.text for m in state["messages"] if isinstance(m, HumanMessage)]
+    conversation = [m.text for m in state["messages"]]
     research = [call["result"] for call in calls if call["tool"] != "budget_breakdown"]
 
     issues = []
@@ -309,14 +310,14 @@ def figure_issues(state: TravelState) -> list[str]:
     draft_calls = work_log[draft_index]["tool_calls"] if draft_index >= 0 else []
     for call in draft_calls:
         if call["tool"] == "budget_breakdown":
-            bad_inputs = unsupported_budget_inputs(call["args"], user_messages + research)
+            bad_inputs = unsupported_budget_inputs(call["args"], conversation + research)
             if bad_inputs:
                 issues.append(
-                    f"budget_breakdown was given values that come from neither the user nor the research: "
+                    f"budget_breakdown was given values that come from neither the conversation nor the research: "
                     f"{', '.join(bad_inputs)}. Pass the user's budget exactly as they stated it, in their "
                     "own currency, and prices exactly as the research found them; the tool does the conversion."
                 )
-    sources = [call["result"] for call in calls] + [m.text for m in state["messages"]]
+    sources = [call["result"] for call in calls] + conversation
     missing = unsupported_amounts(draft, sources)
     if missing:
         issues.append(

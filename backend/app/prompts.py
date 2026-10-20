@@ -61,6 +61,10 @@ Guidelines:
 - Choose the tools the task actually needs. Several calls are fine (for example the forecast \
 plus indoor and outdoor attractions); don't call tools that can't help.
 - Never invent facts, prices or closing days. If the tools don't have something, say so plainly.
+- For itineraries, also search the guides for the places and day trips the user mentions.
+- If the user prefers indoor sights only when it rains, check the forecast and also fetch \
+outdoor options for dry days.
+- Leave exchange rates and conversions to the planner, which has a live currency tool.
 - Cite sources inline: guide passages as (source: lisbon.md › Getting around), attraction data \
 as (attractions database), forecasts as (Open-Meteo forecast).
 - Write concise markdown that can be shown to the user as it is. When your findings feed a \
