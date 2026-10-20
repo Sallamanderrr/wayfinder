@@ -9,7 +9,9 @@ LLMs are poor at checking arithmetic, but number provenance is easy to check in 
   and the prices) that come from neither the user nor the research. Without this, a budget
   converted by hand would be echoed back by the tool and look backed up.
 
-Numbers are compared at cent precision, so 179.2096 in a tool result backs 179.21.
+Amounts are compared at the precision they are written: "179.21" must match a source to the
+cent (179.2096 does), while a whole number like "~78 SEK" only has to match to the whole unit
+(77.85 does). So honest rounding passes, but "703 SEK" for a true 691.32 is still caught.
 """
 
 from __future__ import annotations
@@ -27,11 +29,15 @@ _CURRENCY_BEFORE = re.compile(r"(?:EUR|SEK|USD|GBP|NOK|DKK|CHF|€|\$|£)\s?$")
 
 
 def unsupported_amounts(draft: str, sources: Iterable[str]) -> list[str]:
-    """Money amounts in `draft` that match no number in `sources`, after rounding to cents."""
+    """Money amounts in `draft` that match no number in `sources`, at the amount's own precision."""
     known = _known_cents(sources)
+    known_whole = {(cents + 50) // 100 for cents in known}  # each source rounded to a whole unit
     missing: list[str] = []
     for amount in money_amounts(draft):
-        if _cents(amount) not in known and amount not in missing:
+        cents = _cents(amount)
+        whole_number = "." not in amount
+        supported = (cents // 100 in known_whole) if whole_number else (cents in known)
+        if not supported and amount not in missing:
             missing.append(amount)
     return missing
 

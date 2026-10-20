@@ -87,6 +87,15 @@ def test_accepts_a_correct_answer_from_a_live_run():
     assert unsupported_amounts(draft, sources) == []
 
 
+def test_whole_amounts_are_checked_at_whole_unit_precision():
+    # From a live run: "~78 SEK" for a 24-hour pass the tool converted to 77.85 SEK is honest
+    # rounding. A two-decimal amount must still match to the cent.
+    sources = ["7.00 EUR = 77.85 SEK (rate 1 EUR = 11.1221 SEK)"]
+    assert unsupported_amounts("a 24-hour pass costs about €7 (~78 SEK)", sources) == []
+    assert unsupported_amounts("a 24-hour pass costs 77.90 SEK", sources) == ["77.90"]
+    assert unsupported_amounts("a 24-hour pass costs about 80 SEK", sources) == ["80"]
+
+
 def test_flags_hand_computed_whole_amounts():
     # From a live run: the budget was converted by hand and the remainder made up.
     draft = "a budget of 1,500 SEK (~136 EUR) ... Within budget: 63.80 EUR left of 136.00 EUR (approx. 703 SEK left)"
