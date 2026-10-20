@@ -207,6 +207,42 @@ def test_hand_converted_budget_is_rejected_and_fixed(research_tools, planning_to
     assert "1,320.88 SEK left" in events[-1]["content"]  # 1,500 - 16 x 11.1948 = 1,320.88
 
 
+@pytest.mark.parametrize(
+    ("revision", "warned"),
+    [
+        ("Revised: two tickets cost 179.12 SEK.", False),  # backed by the conversion: shown as is
+        ("Revised: two tickets cost 180.00 SEK.", True),  # made up: flagged even without a review
+    ],
+)
+def test_revision_after_the_last_allowed_review_is_still_checked(research_tools, planning_tools, revision, warned):
+    # max_reviews=1: the planner revises after a failed review, and the supervisor may not
+    # call the verifier again. The final step still runs the code checks on the revision.
+    _, graph = make_graph(
+        {
+            "supervisor": [
+                route("planner", "Two 8 EUR tickets in SEK."),
+                route("verifier", "Check."),
+                route("planner", "Fix the issues."),
+                route("verifier", "Re-check."),  # blocked by the review limit -> finish
+            ],
+            "planner": [
+                call_tool("convert_currency", "c1", amount=16, from_currency="EUR", to_currency="SEK"),
+                AIMessage(content="Two tickets cost 175.00 SEK."),
+                AIMessage(content=revision),
+            ],
+            "verifier": [structured("Review", issues=["Total looks wrong."], approved=False, summary="Wrong total.")],
+        },
+        research_tools,
+        planning_tools,
+        max_reviews=1,
+    )
+    events = run_turn(graph, "t8", "Two 8 EUR tickets in SEK?")
+    assert events[-2] == {"type": "route", "next": "finish", "task": "", "reason": "Stopping: the review limit (1) has been reached."}
+    final = events[-1]["content"]
+    assert final.startswith(revision)
+    assert ("Heads-up from the verifier" in final) is warned
+
+
 def test_turn_is_cut_off_at_the_agent_run_limit(research_tools, planning_tools):
     _, graph = make_graph(
         {

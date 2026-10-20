@@ -181,7 +181,7 @@ def apply_guardrails(
             return _finish(decision, "Stopping: there is no draft to verify.")
         reviews = sum(1 for item in work_log if item["agent"] == "verifier")
         if reviews >= max_reviews:
-            return _finish(decision, f"Stopping: the draft has already been reviewed {reviews} times.")
+            return _finish(decision, f"Stopping: the review limit ({max_reviews}) has been reached.")
     if not decision.task.strip():
         return decision.model_copy(update={"task": "Answer the user's latest message."})
     return decision
@@ -281,9 +281,17 @@ def _verifier_node(llm: BaseChatModel, today: Callable[[], date]):
 
 
 def check_figures(review: Review, state: TravelState) -> Review:
-    """Fail the review if the draft's money figures weren't produced by tools.
+    """Fail the review if the code checks find problems the LLM verifier missed."""
+    issues = figure_issues(state)
+    if not issues:
+        return review
+    summary = review.summary if not review.approved else "Some amounts weren't computed by a tool."
+    return review.model_copy(update={"approved": False, "issues": [*review.issues, *issues], "summary": summary})
 
-    Deterministic backup for the LLM verifier, which can't reliably check arithmetic:
+
+def figure_issues(state: TravelState) -> list[str]:
+    """Code checks on the latest draft's money figures (the LLM can't reliably check arithmetic).
+
     1. The budget and prices given to budget_breakdown must come from the user's messages
        or the research results (otherwise a hand-converted budget would look backed up).
     2. Every money amount in the draft must match a tool result or an earlier message, so a
@@ -315,10 +323,7 @@ def check_figures(review: Review, state: TravelState) -> Review:
             f"These amounts don't match any tool result: {', '.join(missing)}. "
             "Get them from budget_breakdown or convert_currency and copy them exactly."
         )
-    if not issues:
-        return review
-    summary = review.summary if not review.approved else "Some amounts weren't computed by a tool."
-    return review.model_copy(update={"approved": False, "issues": [*review.issues, *issues], "summary": summary})
+    return issues
 
 
 def _finalize_node(state: TravelState) -> dict[str, Any]:
@@ -327,10 +332,16 @@ def _finalize_node(state: TravelState) -> dict[str, Any]:
     if draft:
         answer = draft
         review_index, review = _latest_review(work_log)
+        concerns: list[str] = []
         if review is not None and review_index > draft_index and not review["approved"]:
-            # Out of revision budget: show the answer, but don't hide the verifier's concerns.
+            concerns = review["issues"]  # the last review failed and the limits stopped a fix
+        elif review is not None and review_index < draft_index:
+            # Revised after its last review, but the review limit stopped another review:
+            # the code checks still run, so a wrong number can't pass silently.
+            concerns = figure_issues(state)
+        if concerns:
             answer += "\n\n> **Heads-up from the verifier:** this answer may contain problems:\n" + "\n".join(
-                f"> - {issue}" for issue in review["issues"]
+                f"> - {issue}" for issue in concerns
             )
     else:
         answer = state["reply"].strip() or FALLBACK_ANSWER

@@ -105,7 +105,7 @@ The supervisor and verifier return structured output (Pydantic models), so routi
 - **Through the supervisor.** Agents never call each other directly; every step goes through the supervisor.
 - **A shared work log.** Each agent's task, tool calls and result are added to a work log in the graph state. The supervisor reads it to decide the next step, and the next agent reads it as context.
 - **A review loop.** If the verifier finds problems, the supervisor sends the work back to the planner or researcher with the problems listed.
-- **Limits in code.** At most 6 agent runs and 2 reviews per message, so a turn always ends. If the last review still failed, the answer is shown with the verifier's concerns attached.
+- **Limits in code.** At most 6 agent runs and 2 reviews per message, so a turn always ends. If the last review still failed, the answer is shown with the verifier's concerns attached, and a plan revised after the last allowed review still gets the code checks.
 - **Memory.** A LangGraph checkpointer keeps each conversation's history by `thread_id`, so follow-up questions work.
 
 ## Design decisions
