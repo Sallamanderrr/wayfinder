@@ -81,6 +81,12 @@ def test_plan_goes_through_research_planning_review_and_revision(research_tools,
     routes = [e["next"] for e in events if e["type"] == "route"]
     assert routes == ["researcher", "planner", "verifier", "planner", "verifier", "finish"]
 
+    # Each result carries its call's id, so the UI pairs parallel calls correctly.
+    results_by_id = {e["id"]: e["content"] for e in events if e["type"] == "tool_result"}
+    assert results_by_id["w1"].startswith("Daily forecast for Lisbon")
+    assert "attraction(s) in Lisbon" in results_by_id["a1"]
+    assert {e["id"] for e in events if e["type"] == "tool_call"} == set(results_by_id)
+
     tool_results = {e["tool"]: e["content"] for e in events if e["type"] == "tool_result"}
     assert "rain" in tool_results["get_weather_forecast"]
     assert "National Tile Museum" in tool_results["find_attractions"]

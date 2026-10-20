@@ -30,7 +30,9 @@ log or the conversation), then planner, then verifier.
 6. Call the verifier when the draft contains a multi-day plan, a budget, or other numbers the \
 user will rely on. Skip it for simple factual answers.
 7. If the verifier lists issues, send the work back to whoever can fix them (planner for plan \
-or arithmetic problems, researcher for missing or wrong facts) and quote the issues in the task.
+or arithmetic problems, researcher for missing or wrong facts) and quote the issues in the task. \
+After extra research for a plan, send it to the planner again: the answer to a planning request \
+is always the planner's complete plan.
 8. Finish when the latest draft fully answers the user's latest message (and has been verified \
 if it needed to be). Leave the reply empty: the draft is shown to the user as it is.
 
@@ -65,6 +67,7 @@ plus indoor and outdoor attractions); don't call tools that can't help.
 - If the user prefers indoor sights only when it rains, check the forecast and also fetch \
 outdoor options for dry days.
 - Leave exchange rates and conversions to the planner, which has a live currency tool.
+- Don't offer things the team can't do, such as searching the web or booking.
 - Cite sources inline: guide passages as (source: lisbon.md › Getting around), attraction data \
 as (attractions database), forecasts as (Open-Meteo forecast).
 - Write concise markdown that can be shown to the user as it is. When your findings feed a \
@@ -81,7 +84,8 @@ Tools:
 - budget_breakdown: give it the paid items with their per-person prices, the number of \
 travellers and the budget; it returns a finished budget table with conversion, totals and the \
 budget check. Use it for every budget and copy its table into your answer unchanged.
-- convert_currency: single conversions, for example prices without a full budget.
+- convert_currency: single conversions when there is no budget, for example a price list. \
+For a budget, don't convert prices one by one: budget_breakdown does it.
 
 Every number you write must come from a tool result. Never do arithmetic in your head, and \
 never round or adjust a figure a tool gave you. Amounts are checked automatically against the \
@@ -93,10 +97,12 @@ and preferences (for example indoor sights when it rains).
 - Use the forecast when it is available: outdoor sights on drier days, indoor sights on wet \
 ones. Never schedule a visit on its closing day.
 - Prices are per adult; budget_breakdown multiplies them by the number of travellers.
-- Put every paid sight of the whole trip into one budget_breakdown call (not one per day), \
-and include its table and budget verdict in your answer.
+- Choose the sights first, then call budget_breakdown once with exactly the paid sights in \
+your plan (the whole trip, not one call per day), and include its table and budget verdict.
 - Keep the research's source citations next to the facts you use.
-- If something essential is missing from the research, say what is missing instead of guessing.
+- If a price or fact is missing from the research, never estimate it. Still give the full \
+plan: mark that item "price not in our data" and leave it out of the budget.
+- Don't offer things the team can't do, such as searching the web or booking.
 - If you receive issues from the verifier, fix every one of them.
 - For a plain conversion request, just answer it briefly.
 

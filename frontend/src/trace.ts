@@ -4,14 +4,15 @@ export type AgentName = 'researcher' | 'planner' | 'verifier'
 
 export type ServerEvent =
   | { type: 'route'; next: AgentName | 'finish'; task: string; reason: string }
-  | { type: 'tool_call'; agent: AgentName; tool: string; args: Record<string, unknown> }
-  | { type: 'tool_result'; agent: AgentName; tool: string; content: string }
+  | { type: 'tool_call'; agent: AgentName; id: string; tool: string; args: Record<string, unknown> }
+  | { type: 'tool_result'; agent: AgentName; id: string; tool: string; content: string }
   | { type: 'agent_output'; agent: AgentName; content: string }
   | { type: 'review'; approved: boolean; issues: string[]; summary: string }
   | { type: 'final'; content: string }
   | { type: 'error'; message: string }
 
 export interface ToolStop {
+  id: string
   tool: string
   args: Record<string, unknown>
   result?: string
@@ -49,10 +50,11 @@ export function applyEvent(trace: Trace, event: ServerEvent): Trace {
         legs: [...trace.legs, { agent: event.next, reason: event.reason, task: event.task, tools: [] }],
       }
     case 'tool_call':
-      return updateLastLeg(trace, (leg) => ({ ...leg, tools: [...leg.tools, { tool: event.tool, args: event.args }] }))
+      return updateLastLeg(trace, (leg) => ({ ...leg, tools: [...leg.tools, { id: event.id, tool: event.tool, args: event.args }] }))
     case 'tool_result':
       return updateLastLeg(trace, (leg) => {
-        const index = leg.tools.findIndex((stop) => stop.tool === event.tool && stop.result === undefined)
+        // Match by call id: parallel calls of the same tool can finish in any order.
+        const index = leg.tools.findIndex((stop) => stop.id === event.id)
         if (index === -1) return leg
         return { ...leg, tools: leg.tools.map((stop, i) => (i === index ? { ...stop, result: event.content } : stop)) }
       })

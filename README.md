@@ -33,7 +33,7 @@ Tests run offline, without a key: `cd backend && pytest`.
 | What's the weather in Barcelona over the next three days? | Tool use: live weather API |
 | Which museums in Paris are open on Mondays, and what do they cost in SEK? | Two agents: researcher queries the attractions data, planner converts prices |
 | Plan two days in Lisbon this weekend for two people. Our budget for sights is 1,500 SEK, and we prefer indoor sights if it rains. | All agents: research → plan → review, and back to the planner if the review fails |
-| *(follow-up)* Make it three days and add a day trip to Sintra. | Conversation memory |
+| *(follow-up)* Add a third day, on Monday. | Conversation memory, and closing days: several Lisbon sights close on Mondays |
 | Hi, what can you do? | No agents needed: the supervisor answers directly |
 
 ## Architecture

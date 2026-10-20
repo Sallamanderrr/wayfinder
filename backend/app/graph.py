@@ -229,12 +229,9 @@ def _run_agent(
                 for message in node_update.get("messages", []):
                     if isinstance(message, AIMessage):
                         for call in message.tool_calls:
-                            pending[call.get("id") or call["name"]] = {
-                                "tool": call["name"],
-                                "args": call["args"],
-                                "result": "",
-                            }
-                            writer({"type": "tool_call", "agent": name, "tool": call["name"], "args": call["args"]})
+                            call_id = call.get("id") or call["name"]
+                            pending[call_id] = {"tool": call["name"], "args": call["args"], "result": ""}
+                            writer({"type": "tool_call", "agent": name, "id": call_id, "tool": call["name"], "args": call["args"]})
                         if not message.tool_calls:
                             output = message.text
                     elif isinstance(message, ToolMessage):
@@ -242,18 +239,20 @@ def _run_agent(
                         record = pending.pop(message.tool_call_id, fallback)
                         record["result"] = message.text
                         records.append(record)
+                        # Parallel calls finish in any order, so the id pairs each result with its call.
                         writer(
                             {
                                 "type": "tool_result",
                                 "agent": name,
+                                "id": message.tool_call_id,
                                 "tool": record["tool"],
                                 "content": _truncate(message.text, 600),
                             }
                         )
     except GraphRecursionError:
         output = output or "I ran out of steps before finishing this task."
-        for record in pending.values():  # requested, but cut off before they could run
-            writer({"type": "tool_result", "agent": name, "tool": record["tool"], "content": "Not run: step limit reached."})
+        for call_id, record in pending.items():  # requested, but cut off before they could run
+            writer({"type": "tool_result", "agent": name, "id": call_id, "tool": record["tool"], "content": "Not run: step limit reached."})
     return output, records
 
 
